@@ -21,6 +21,9 @@ class ModerationService:
 
     async def moderate_content(self, request: ModerationRequest) -> ModerationResult:
         """Moderate content using OpenAI."""
+        if not request.content or not request.content.strip():
+            raise ValueError("content must not be empty or whitespace-only")
+
         response = await self.openai_client.moderations.create(input=request.content)
         result = response.results[0]
 
