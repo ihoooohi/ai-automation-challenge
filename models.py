@@ -15,13 +15,23 @@ class ModerationRequest(BaseModel):
     creator_id: str
     video_id: Optional[str] = None
 
-class ModerationResult(BaseModel):
-    """Structured AI moderation result"""
+class ProviderResult(BaseModel):
+    """Single provider's moderation result"""
+    provider: str  # "openai" or "anthropic"
     is_safe: bool
     confidence: float = Field(..., ge=0.0, le=1.0)
     violation_type: ViolationType
     reasoning: str
-    provider: str  # "openai" or "anthropic"
+
+class ModerationResult(BaseModel):
+    """Aggregated dual-provider moderation result"""
+    is_safe: bool
+    needs_human_review: bool
+    confidence: float = Field(..., ge=0.0, le=1.0)
+    violation_type: ViolationType
+    reasoning: str
+    provider: str  # "openai+anthropic"
+    provider_results: List[ProviderResult]
 
 class ModerationResponse(BaseModel):
     """API response model"""
