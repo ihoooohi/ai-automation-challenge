@@ -32,19 +32,55 @@ class ModerationService:
 
         # Map OpenAI category to our violation type
         violation_type = ViolationType.NONE
+        category_map = {
+            "hate": ViolationType.HATE_SPEECH,
+            "violence": ViolationType.VIOLENCE,
+            "sexual": ViolationType.ADULT_CONTENT,
+            "spam": ViolationType.SPAM,
+        }
         if result.flagged:
-            category_map = {
-                "hate": ViolationType.HATE_SPEECH,
-                "violence": ViolationType.VIOLENCE,
-                "sexual": ViolationType.ADULT_CONTENT,
-                "spam": ViolationType.SPAM,
-            }
             violation_type = category_map.get(max_category, ViolationType.NONE)
+
+        reasoning = self._build_reasoning(result, max_category, max_score)
 
         return ModerationResult(
             is_safe=not result.flagged,
             confidence=max_score,
             violation_type=violation_type,
-            reasoning="Automated moderation check",
+            reasoning=reasoning,
             provider="openai"
         )
+
+    def _build_reasoning(self, result, max_category: str, max_score: float) -> str:
+        """Build human-readable reasoning from moderation result."""
+        category_labels = {
+            "hate": "hate speech",
+            "violence": "violence",
+            "sexual": "adult content",
+            "spam": "spam",
+        }
+        label = category_labels.get(max_category, max_category)
+
+        if result.flagged:
+            keywords = getattr(result, "matched_keywords", {}).get(max_category, [])
+            keyword_part = (
+                f" Triggered by: {', '.join(repr(k) for k in keywords)}."
+                if keywords else ""
+            )
+            return (
+                f"Content flagged for {label} (score: {max_score:.0%}, "
+                f"threshold: {self.confidence_threshold:.0%}).{keyword_part}"
+            )
+        else:
+            all_scores = {
+                cat: getattr(result.category_scores, cat)
+                for cat in ["hate", "violence", "sexual", "spam"]
+            }
+            score_summary = ", ".join(
+                f"{category_labels[c]}: {s:.0%}"
+                for c, s in sorted(all_scores.items(), key=lambda x: -x[1])
+            )
+            return (
+                f"No violations detected (all scores below threshold of "
+                f"{self.confidence_threshold:.0%}). Scores: {score_summary}."
+            )
