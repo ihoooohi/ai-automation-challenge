@@ -72,7 +72,27 @@ curl -X POST "http://localhost:8000/moderate" \
   -d '{"content": "Knife skills: cut vegetable", "creator_id": "chef123"}'
 ```
 
-**Example Response:**
+**Example Response (safe content):**
+
+```json
+{
+  "moderation": {
+    "is_safe": true,
+    "needs_human_review": false,
+    "confidence": 0.785,
+    "violation_type": "none",
+    "reasoning": "Both OpenAI and Anthropic consider this content safe. No violations detected...",
+    "provider": "openai+anthropic",
+    "provider_results": [
+      {"provider": "openai", "is_safe": true, "confidence": 0.72, "violation_type": "none", "reasoning": "No violations detected..."},
+      {"provider": "anthropic", "is_safe": true, "confidence": 0.85, "violation_type": "none", "reasoning": "Content appears to be within community guidelines."}
+    ]
+  },
+  "processing_time_ms": 15.34
+}
+```
+
+**Example Response (provider disagreement - human review required):**
 
 ```json
 {
@@ -87,7 +107,8 @@ curl -X POST "http://localhost:8000/moderate" \
       {"provider": "openai", "is_safe": false, "confidence": 0.95, "violation_type": "violence", "reasoning": "..."},
       {"provider": "anthropic", "is_safe": true, "confidence": 0.85, "violation_type": "none", "reasoning": "..."}
     ]
-  }
+  },
+  "processing_time_ms": 1.39
 }
 ```
 
