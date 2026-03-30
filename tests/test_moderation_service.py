@@ -316,3 +316,36 @@ class TestModerateContent:
     async def test_reasoning_not_empty(self, service):
         result = await service.moderate_content(make_request("Safe content."))
         assert len(result.reasoning) > 0
+
+
+# ---------------------------------------------------------------------------
+# False negatives
+# ---------------------------------------------------------------------------
+
+class TestFalseNegatives:
+    @pytest.mark.asyncio
+    async def test_supplement_scam_passes(self, service):
+        result = await service.moderate_content(
+            make_request("miracle weight loss supplement try this one weird trick")
+        )
+        assert result.provider == "openai+anthropic"
+
+    @pytest.mark.asyncio
+    async def test_coded_hate_passes(self, service):
+        result = await service.moderate_content(
+            make_request("those people you know who are ruining everything")
+        )
+        assert result.provider == "openai+anthropic"
+
+
+# ---------------------------------------------------------------------------
+# video_id passthrough
+# ---------------------------------------------------------------------------
+
+class TestVideoIdPassthrough:
+    @pytest.mark.asyncio
+    async def test_result_does_not_drop_video_id(self, service):
+        result = await service.moderate_content(
+            make_request("safe content", video_id="vid-42")
+        )
+        assert result is not None

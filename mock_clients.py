@@ -28,7 +28,7 @@ class MockModerationResult:
 
     def __init__(self, input_text: str):
         self.input_text = input_text.lower()
-        self.flagged, self.categories, scores = self._analyze_content()
+        self.flagged, self.categories, scores, self.matched_keywords = self._analyze_content()
         self.category_scores = MockCategoryScores(scores)
 
     def _analyze_content(self):
@@ -41,41 +41,53 @@ class MockModerationResult:
         categories = {"hate": False, "violence": False, "sexual": False, "spam": False}
         scores = {"hate": 0.02, "violence": 0.01, "sexual": 0.01, "spam": 0.03}
         flagged = False
+        matched_keywords: Dict[str, List[str]] = {}
+
+        def find_matched(text, words):
+            return [w for w in words if w in text]
 
         # === FALSE POSITIVES (legitimate content incorrectly flagged) ===
 
         # Cooking videos with "knife", "chop", "cut" trigger violence
-        if any(word in text for word in ["chop", "slice", "dice", "cut", "knife", "butcher"]):
-            if any(word in text for word in ["cook", "recipe", "kitchen", "food", "vegetable", "meat"]):
-                categories["violence"] = True
-                scores["violence"] = 0.72  # High enough to flag
-                flagged = True
+        violence_cooking = find_matched(text, ["chop", "slice", "dice", "cut", "knife", "butcher"])
+        cooking_context = find_matched(text, ["cook", "recipe", "kitchen", "food", "vegetable", "meat"])
+        if violence_cooking and cooking_context:
+            categories["violence"] = True
+            scores["violence"] = 0.72  # High enough to flag
+            flagged = True
+            matched_keywords["violence"] = violence_cooking
 
         # Fitness content with body-related words triggers adult content
-        if any(word in text for word in ["shirtless", "abs", "body", "sweaty", "workout"]):
-            if any(word in text for word in ["fitness", "gym", "exercise", "training"]):
-                categories["sexual"] = True
-                scores["sexual"] = 0.68
-                flagged = True
+        body_words = find_matched(text, ["shirtless", "abs", "body", "sweaty", "workout"])
+        fitness_context = find_matched(text, ["fitness", "gym", "exercise", "training"])
+        if body_words and fitness_context:
+            categories["sexual"] = True
+            scores["sexual"] = 0.68
+            flagged = True
+            matched_keywords["sexual"] = body_words
 
         # Medical/health content triggers various categories
-        if any(word in text for word in ["blood", "surgery", "injection", "wound"]):
-            if any(word in text for word in ["doctor", "medical", "health", "nurse"]):
-                categories["violence"] = True
-                scores["violence"] = 0.61
-                flagged = True
+        medical_words = find_matched(text, ["blood", "surgery", "injection", "wound"])
+        medical_context = find_matched(text, ["doctor", "medical", "health", "nurse"])
+        if medical_words and medical_context:
+            categories["violence"] = True
+            scores["violence"] = 0.61
+            flagged = True
+            matched_keywords["violence"] = medical_words
 
         # === FALSE NEGATIVES (harmful content that passes) ===
 
         # Subtle supplement scams pass through
-        if any(word in text for word in ["miracle", "secret", "doctors hate", "one weird trick"]):
-            if any(word in text for word in ["weight loss", "muscle", "energy", "supplement"]):
-                # This SHOULD be flagged as spam but isn't
-                scores["spam"] = 0.42  # Below typical threshold
-                flagged = False
+        scam_words = find_matched(text, ["miracle", "secret", "doctors hate", "one weird trick"])
+        scam_context = find_matched(text, ["weight loss", "muscle", "energy", "supplement"])
+        if scam_words and scam_context:
+            # This SHOULD be flagged as spam but isn't
+            scores["spam"] = 0.42  # Below typical threshold
+            flagged = False
 
         # Coded hate speech passes
-        if any(phrase in text for phrase in ["those people", "you know who", "certain types"]):
+        coded_hate = find_matched(text, ["those people", "you know who", "certain types"])
+        if coded_hate:
             # Subtle enough to avoid detection
             scores["hate"] = 0.38
             flagged = False
@@ -83,27 +95,35 @@ class MockModerationResult:
         # === CLEAR VIOLATIONS (correctly flagged) ===
 
         # Obvious violations
-        if any(word in text for word in ["kill", "attack", "destroy", "murder"]):
+        violence_words = find_matched(text, ["kill", "attack", "destroy", "murder"])
+        if violence_words:
             categories["violence"] = True
             scores["violence"] = 0.95
             flagged = True
+            matched_keywords["violence"] = violence_words
 
-        if any(word in text for word in ["hate", "racist", "slur"]):
+        hate_words = find_matched(text, ["hate", "racist", "slur"])
+        if hate_words:
             categories["hate"] = True
             scores["hate"] = 0.92
             flagged = True
+            matched_keywords["hate"] = hate_words
 
-        if any(word in text for word in ["nsfw", "explicit", "xxx"]):
+        sexual_words = find_matched(text, ["nsfw", "explicit", "xxx"])
+        if sexual_words:
             categories["sexual"] = True
             scores["sexual"] = 0.98
             flagged = True
+            matched_keywords["sexual"] = sexual_words
 
-        if any(word in text for word in ["buy now", "click here", "limited time", "act fast"]):
+        spam_phrases = find_matched(text, ["buy now", "click here", "limited time", "act fast"])
+        if spam_phrases:
             categories["spam"] = True
             scores["spam"] = 0.85
             flagged = True
+            matched_keywords["spam"] = spam_phrases
 
-        return flagged, categories, scores
+        return flagged, categories, scores, matched_keywords
 
 
 class MockModerationResponse:
