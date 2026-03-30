@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from typing import Optional, List
 from enum import Enum
 
@@ -14,6 +14,13 @@ class ModerationRequest(BaseModel):
     content: str = Field(..., min_length=1)
     creator_id: str
     video_id: Optional[str] = None
+
+    @field_validator("content")
+    @classmethod
+    def content_must_not_be_blank(cls, v: str) -> str:
+        if not v or not v.strip():
+            raise ValueError("content must not be empty or whitespace-only")
+        return v.strip()
 
 class ProviderResult(BaseModel):
     """Single provider's moderation result"""
