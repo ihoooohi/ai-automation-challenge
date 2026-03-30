@@ -1,14 +1,13 @@
 """
 Shared fixtures and helpers for all test modules.
 """
-import json
 import pytest
 import pytest_asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 from httpx import AsyncClient, ASGITransport
 
-from models import ModerationRequest
 from moderation_service import ModerationService
+from tests.helpers import anthropic_response, make_request
 
 
 # ---------------------------------------------------------------------------
@@ -19,22 +18,8 @@ pytest_plugins = ("pytest_asyncio",)
 
 
 # ---------------------------------------------------------------------------
-# Mock Anthropic response builders
+# Pre-built Anthropic mock responses
 # ---------------------------------------------------------------------------
-
-def anthropic_response(is_safe: bool, confidence: float, violation_type: str, reasoning: str):
-    """Build a mock Anthropic MockMessage-style object."""
-    content = MagicMock()
-    content.text = json.dumps({
-        "is_safe": is_safe,
-        "confidence": confidence,
-        "violation_type": violation_type,
-        "reasoning": reasoning,
-    })
-    msg = MagicMock()
-    msg.content = [content]
-    return msg
-
 
 ANTHROPIC_SAFE = anthropic_response(True, 0.85, "none", "Content appears safe.")
 ANTHROPIC_HATE = anthropic_response(False, 0.91, "hate_speech", "Anthropic detected hate speech.")
@@ -91,14 +76,6 @@ def service_anthropic_unsafe_adult(service, monkeypatch):
         AsyncMock(return_value=ANTHROPIC_ADULT),
     )
     return service
-
-
-# ---------------------------------------------------------------------------
-# Request helpers
-# ---------------------------------------------------------------------------
-
-def make_request(content: str, creator_id: str = "user_test", video_id: str = None):
-    return ModerationRequest(content=content, creator_id=creator_id, video_id=video_id)
 
 
 # ---------------------------------------------------------------------------

@@ -130,7 +130,7 @@ class ModerationService:
     ) -> str:
         """Build a human-readable summary of the two providers' decisions."""
         if openai_result.is_safe and anthropic_result.is_safe:
-            return "Both OpenAI and Anthropic consider this content safe."
+            return f"Both OpenAI and Anthropic consider this content safe. {openai_result.reasoning}"
         if not openai_result.is_safe and not anthropic_result.is_safe:
             return (
                 f"Both providers flagged this content. "
@@ -148,6 +148,9 @@ class ModerationService:
 
     async def moderate_content(self, request: ModerationRequest) -> ModerationResult:
         """Moderate content using both OpenAI and Anthropic in parallel."""
+        if not request.content or not request.content.strip():
+            raise ValueError("content must not be empty or whitespace-only")
+
         openai_result, anthropic_result = await asyncio.gather(
             self._moderate_with_openai(request),
             self._moderate_with_anthropic(request),

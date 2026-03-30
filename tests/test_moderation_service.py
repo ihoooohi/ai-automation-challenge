@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock
 from models import ViolationType
 from moderation_service import ModerationService, _SEVERITY_ORDER
 
-from conftest import make_request, anthropic_response
+from tests.helpers import make_request, anthropic_response
 
 
 # ---------------------------------------------------------------------------

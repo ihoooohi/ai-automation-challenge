@@ -7,8 +7,6 @@ import pytest
 import pytest_asyncio
 from unittest.mock import AsyncMock
 
-from conftest import anthropic_response
-
 
 # ---------------------------------------------------------------------------
 # GET /health

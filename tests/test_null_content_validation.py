@@ -152,7 +152,7 @@ class TestModerationServiceGuard:
         result = await service.moderate_content(req)
         assert result.is_safe is True
         assert 0.0 <= result.confidence <= 1.0
-        assert result.provider == "openai"
+        assert result.provider == "openai+anthropic"
 
 
 # ---------------------------------------------------------------------------
