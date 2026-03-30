@@ -1,98 +1,214 @@
-# AI Automation Engineer Challenge
+# Content Moderation Service
 
-**Time Limit:** 15 minutes
-**Position:** AI Automation Engineer
+A FastAPI-based dual-provider content moderation service that calls both OpenAI and Anthropic in parallel for safety detection.
 
----
+## Background
 
-## Scenario
+The original system had the following issues:
 
-You've joined Vizzy Labs and inherited a content moderation service. The service is **functional** - it runs, accepts requests, and returns results.
+| Issue | Description |
+|-------|-------------|
+| **High False Positives** | Cooking videos flagged as violence (chop/knife), fitness videos flagged as adult content |
+| **False Negatives Risk** | Hidden spam ads and borderline hate speech slipped through |
+| **Lack of Transparency** | Moderation decisions couldn't be explained to legal team |
 
-However, the business has concerns...
+## Key Transformations
 
----
+### 1. Dual-Provider Parallel Moderation
 
-## The Situation
+`ModerationService` now calls both OpenAI and Anthropic in parallel using `asyncio.gather`:
 
-**From the Creator Success Team (via Slack):**
-> "We're getting ~50 support tickets/week from creators whose content is incorrectly flagged. One cooking video was flagged as 'violence' (chopping vegetables). A fitness creator got flagged for 'adult content' (shirtless workout). Creators are threatening to leave the platform."
+```
+OpenAI  ─┐
+         ├─→ Decision Logic ─→ ModerationResult
+Anthropic─┘
+```
 
-**From Trust & Safety (in a meeting):**
-> "We had a video promoting dangerous supplements reach 100K views before we caught it. Our moderation also missed some borderline hate speech last month. We need to be MORE aggressive, not less."
+**Decision Matrix:**
 
-**From your Engineering Manager:**
-> "Both teams are right. We also have no visibility into WHY decisions are made. When Legal asks 'why was this flagged?', we can't answer. We need the system to be more transparent and tunable."
+| OpenAI | Anthropic | Result |
+|--------|-----------|--------|
+| safe | safe | `is_safe=True`, `needs_human_review=False` |
+| unsafe | unsafe | `is_safe=False`, `needs_human_review=False` |
+| safe | unsafe | `is_safe=False`, `needs_human_review=True` |
+| unsafe | safe | `is_safe=False`, `needs_human_review=True` |
 
----
+When providers disagree, content is flagged for human review instead of auto-rejection, protecting legitimate creators.
 
-## Your Task
+### 2. Transparent Reasoning
 
-**You have 15 minutes.** The interviewer is your stakeholder - ask them questions.
+Before: `"Automated moderation check"` (meaningless)
 
-We want to see:
+Now:
+```
+Content flagged for violence (score: 95%, threshold: 50%). Triggered by: 'kill', 'destroy'.
 
-1. **How do you approach this problem?**
-   - These requirements conflict. How do you think about the trade-offs?
-   - What questions would you ask? What data would you want?
+No violations detected (all scores below threshold of 50%). Scores: spam: 3%, hate speech: 2%, violence: 1%, adult content: 1%.
+```
 
-2. **What do you propose?**
-   - There's no single "right" answer
-   - We want to understand YOUR reasoning
+Response includes each provider's individual decision and reasoning for auditability.
 
-3. **Implement something**
-   - Once you've decided what to do, build it
-   - AI can help you code, but YOU must decide what to code
+### 3. Null/Empty Content Guard
 
----
+**Two-layer defense:**
 
-## Current System
+- **Pydantic Layer**: `content` field has `min_length=1` + `field_validator` rejects whitespace-only strings, returns HTTP 422
+- **Service Layer**: `moderate_content()` checks again and raises `ValueError` to prevent bypass
+
+### 4. ProviderResult Model
+
+Each provider returns independent results:
+
+```python
+{
+    "provider": "openai",           # or "anthropic"
+    "is_safe": false,
+    "confidence": 0.95,
+    "violation_type": "violence",
+    "reasoning": "Content flagged for violence..."
+}
+```
+
+Final response includes `provider_results` list with both providers' analysis.
+
+## Quick Start
+
+### 1. Install Dependencies
 
 ```bash
 cd ai-automation-challenge
-pip install -r requirements.txt
+pip3 install -r requirements.txt
+```
+
+### 2. Start Service
+
+```bash
 uvicorn main:app --reload
 ```
 
-Test it:
+Service runs at `http://localhost:8000`
+
+### 3. Health Check
+
+```bash
+curl http://localhost:8000/health
+```
+
+### 4. Test Moderation Endpoint
+
 ```bash
 curl -X POST "http://localhost:8000/moderate" \
   -H "Content-Type: application/json" \
   -d '{"content": "Check out my cooking tutorial!", "creator_id": "chef123"}'
 ```
 
-The system works. It returns moderation results. The question is whether it's doing the RIGHT thing.
+**Example Response (safe content):**
 
----
+```json
+{
+  "video_id": null,
+  "moderation": {
+    "is_safe": true,
+    "needs_human_review": false,
+    "confidence": 0.785,
+    "violation_type": "none",
+    "reasoning": "Both OpenAI and Anthropic consider this content safe. No violations detected...",
+    "provider": "openai+anthropic",
+    "provider_results": [
+      {
+        "provider": "openai",
+        "is_safe": true,
+        "confidence": 0.72,
+        "violation_type": "none",
+        "reasoning": "No violations detected..."
+      },
+      {
+        "provider": "anthropic",
+        "is_safe": true,
+        "confidence": 0.85,
+        "violation_type": "none",
+        "reasoning": "Content appears to be within community guidelines."
+      }
+    ]
+  },
+  "processing_time_ms": 15.34
+}
+```
 
-## Files
+**Example Response (provider disagreement - human review required):**
 
-All files are functional. Modify whatever you think needs changing.
+```bash
+curl -X POST "http://localhost:8000/moderate" \
+  -H "Content-Type: application/json" \
+  -d '{"content": "Knife skills: cut vegetable", "creator_id": "chef123"}'
+```
 
-| File | Description |
+```json
+{
+  "video_id": null,
+  "moderation": {
+    "is_safe": false,
+    "needs_human_review": true,
+    "confidence": 0.9,
+    "violation_type": "violence",
+    "reasoning": "Providers disagree — human review required. OpenAI (unsafe, confidence 0.95): Content flagged for violence (score: 95%, threshold: 50%). Triggered by: 'kill'. Anthropic (safe, confidence 0.85): Content appears to be within community guidelines.",
+    "provider": "openai+anthropic",
+    "provider_results": [
+      {
+        "provider": "openai",
+        "is_safe": false,
+        "confidence": 0.95,
+        "violation_type": "violence",
+        "reasoning": "Content flagged for violence (score: 95%, threshold: 50%). Triggered by: 'kill'."
+      },
+      {
+        "provider": "anthropic",
+        "is_safe": true,
+        "confidence": 0.85,
+        "violation_type": "none",
+        "reasoning": "Content appears to be within community guidelines."
+      }
+    ]
+  },
+  "processing_time_ms": 1.39
+}
+```
+
+In this case, OpenAI flagged "knife skills" as violence (false positive), while Anthropic correctly identified it as safe cooking content. The system routes this to human review instead of auto-rejecting the creator's content.
+
+## Project Structure
+
+```
+ai-automation-challenge/
+├── main.py                  # FastAPI entry point, /moderate and /health endpoints
+├── moderation_service.py    # Core moderation logic: dual-provider parallel calls, decision aggregation
+├── models.py                # Pydantic data models
+├── mock_clients.py          # Mock OpenAI/Anthropic APIs (includes false positive/negative scenarios)
+├── requirements.txt
+└── tests/                   # pytest test suite
+```
+
+## Violation Types
+
+| Type | Description |
 |------|-------------|
-| `main.py` | FastAPI application |
-| `moderation_service.py` | Core moderation logic |
-| `models.py` | Data models |
-| `mock_clients.py` | Simulates AI APIs (realistic behavior) |
+| `hate_speech` | Hate speech |
+| `violence` | Violent content |
+| `adult_content` | Adult content |
+| `spam` | Spam |
+| `none` | No violation |
 
----
+## Mock Client Behavior
 
-## Important
+`mock_clients.py` simulates real-world moderation challenges:
 
-**We are NOT looking for:**
-- Bug fixes (the code runs fine)
-- A "perfect" solution (none exists)
-- Impressive code (simple is better)
+**False Positives:**
+- `chop, knife, slice` + `cook, recipe` → violence
+- `shirtless, abs, workout` + `fitness, gym` → adult_content
+- `blood, surgery` + `medical, doctor` → violence
 
-**We ARE looking for:**
-- How you think about conflicting requirements
-- Your ability to make decisions with incomplete information
-- Whether you can direct AI tools vs being directed by them
-- Your reasoning and trade-off analysis
+**False Negatives:**
+- `miracle, doctors hate` + `weight loss, supplement` → passes (spam 0.42 < 0.5)
+- `those people, you know who` → passes (hate 0.38 < 0.5)
 
----
-
-## Hints for the Interviewer (Candidate: Ignore This)
-
-*If candidate asks good questions, share relevant context. If they dive straight into code without understanding the problem, that's a signal.*
+This tests how the dual-provider system catches these issues through cross-validation.
